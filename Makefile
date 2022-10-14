@@ -11,6 +11,7 @@ chain-install:
 chain-clean:
 	@echo "Cleaning the chain..."
 	@rm -rf artifacts
+	@rm -rf solc_out
 	@rm -rf dev_chain
 
 # ------------------------------------  Chain Related  -----------------------------------------
