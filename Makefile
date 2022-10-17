@@ -44,13 +44,8 @@ contracts:
 	@rm -rf artifacts/contracts
 	@npx hardhat compile
 
-contracts-deploy:
-	@mix stela.deploy stela
-
 hd-contracts:
 	@npx hardhat run --network localhost scripts/deploy.js
-
-contracts-run: contracts contracts-deploy hdconsole
 
 contracts-asm:
 	@solc contracts/Stela.sol \
