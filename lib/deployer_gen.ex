@@ -24,8 +24,9 @@ defmodule ChainUtil.DeployerGen do
       end
 
     inspectors = quote_args_inspect(arg_type_list)
+    default_beneficiary = default_beneficiary(args)
 
-    contents = quote_deployer(quoted_args, inspectors)
+    contents = quote_deployer(quoted_args, inspectors, default_beneficiary)
 
     DynamicModule.gen(
       module_name,
@@ -47,7 +48,7 @@ defmodule ChainUtil.DeployerGen do
   #   "stateMutability": "nonpayable",
   #   "type": "constructor"
   # }
-  def quote_deployer(quoted_args, inspectors) do
+  def quote_deployer(quoted_args, inspectors, default_beneficiary) do
     quote do
       def run(command_line_args) do
         Application.ensure_all_started(:ocap_rpc)
@@ -57,6 +58,7 @@ defmodule ChainUtil.DeployerGen do
       end
 
       def do_run([unquote_splicing(quoted_args)], sk) do
+        unquote(default_beneficiary)
         hash = Contract.deploy(sk, unquote_splicing(quoted_args))
 
         tx = wait_tx(hash) |> IO.inspect(label: "Deployment Transaction")
@@ -113,6 +115,22 @@ defmodule ChainUtil.DeployerGen do
   def get_function_selector_type("bytes"), do: :bytes
   def get_function_selector_type("string"), do: :string
   def get_function_selector_type("address"), do: :address
+
+  def default_beneficiary(args) do
+    args
+    |> Enum.any?(fn arg -> arg == "beneficiary" end)
+    |> case do
+      true ->
+        quote do
+          %{alice: %{addr: alice}} = ChainUtil.wallets()
+          beneficiary = Keyword.get(binding(), :beneficiary, alice)
+        end
+
+      false ->
+        quote do
+        end
+    end
+  end
 
   @doc """
   Convert a string to an atom in snake case.
