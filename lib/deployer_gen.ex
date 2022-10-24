@@ -23,10 +23,11 @@ defmodule ChainUtil.DeployerGen do
         use Mix.Task
       end
 
+    casts = quote_args_cast(arg_type_list)
     inspectors = quote_args_inspect(arg_type_list)
-    default_beneficiary = default_beneficiary(args)
+    default_beneficiary = quote_default_beneficiary(args)
 
-    contents = quote_deployer(quoted_args, inspectors, default_beneficiary)
+    contents = quote_deployer(quoted_args, casts, inspectors, default_beneficiary)
 
     DynamicModule.gen(
       module_name,
@@ -48,7 +49,7 @@ defmodule ChainUtil.DeployerGen do
   #   "stateMutability": "nonpayable",
   #   "type": "constructor"
   # }
-  def quote_deployer(quoted_args, inspectors, default_beneficiary) do
+  def quote_deployer(quoted_args, casts, inspectors, default_beneficiary) do
     quote do
       def run(command_line_args) do
         Application.ensure_all_started(:ocap_rpc)
@@ -59,6 +60,8 @@ defmodule ChainUtil.DeployerGen do
 
       def do_run([unquote_splicing(quoted_args)], sk) do
         unquote(default_beneficiary)
+
+        unquote_splicing(casts)
         hash = Contract.deploy(sk, unquote_splicing(quoted_args))
 
         tx = wait_tx(hash) |> IO.inspect(label: "Deployment Transaction")
@@ -95,7 +98,7 @@ defmodule ChainUtil.DeployerGen do
     Enum.map(arg_type_list, &do_quote_args_inspect/1)
   end
 
-  def do_quote_args_inspect({arg, type}) do
+  defp do_quote_args_inspect({arg, type}) do
     quote do
       Contract
       |> apply(unquote(to_snake_atom("get_" <> arg)), [contract_address])
@@ -109,14 +112,34 @@ defmodule ChainUtil.DeployerGen do
     end
   end
 
-  def get_function_selector_type("uint8"), do: {:uint, 8}
-  def get_function_selector_type("uint256"), do: {:uint, 256}
-  def get_function_selector_type("bool"), do: :bool
-  def get_function_selector_type("bytes"), do: :bytes
-  def get_function_selector_type("string"), do: :string
-  def get_function_selector_type("address"), do: :address
+  defp get_function_selector_type("uint8"), do: {:uint, 8}
+  defp get_function_selector_type("uint256"), do: {:uint, 256}
+  defp get_function_selector_type("bool"), do: :bool
+  defp get_function_selector_type("bytes"), do: :bytes
+  defp get_function_selector_type("string"), do: :string
+  defp get_function_selector_type("address"), do: :address
 
-  def default_beneficiary(args) do
+  def quote_args_cast(arg_type_list) do
+    arg_type_list
+    |> Enum.map(fn
+      {arg, "int" <> _} -> {arg, :to_integer}
+      {arg, "uint" <> _} -> {arg, :to_integer}
+      {arg, "bool" <> _} -> {arg, :to_atom}
+      _ -> nil
+    end)
+    |> Enum.filter(fn tuple -> tuple != nil end)
+    |> Enum.map(&do_quote_args_cast/1)
+  end
+
+  defp do_quote_args_cast({arg, caster}) do
+    arg_name = arg |> to_snake_atom |> Macro.var(nil)
+
+    quote do
+      unquote(arg_name) = apply(String, unquote(caster), [unquote(arg_name)])
+    end
+  end
+
+  def quote_default_beneficiary(args) do
     args
     |> Enum.any?(fn arg -> arg == "beneficiary" end)
     |> case do
