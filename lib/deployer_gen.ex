@@ -5,51 +5,34 @@ defmodule ChainUtil.DeployerGen do
   def gen_deployer(contract_json_path, contract_name, module_name) do
     contract_module = String.to_atom("Elixir.#{contract_name}")
 
-    [constructor] =
-      contract_json_path
-      |> File.read!()
-      |> Poison.decode!()
-      |> Map.get("abi")
-      |> Enum.filter(fn abi -> abi["type"] == "constructor" end)
-
-    args = constructor["inputs"] |> Enum.map(&Map.get(&1, "name"))
-    types = constructor["inputs"] |> Enum.map(&Map.get(&1, "type"))
-    arg_type_list = Enum.zip(args, types)
-    quoted_args = args |> Enum.map(&to_snake_atom/1) |> Enum.map(&Macro.var(&1, nil))
-
     preamble =
       quote do
         alias unquote(contract_module), as: Contract
         use Mix.Task
       end
 
-    casts = quote_args_cast(arg_type_list)
-    inspectors = quote_args_inspect(arg_type_list)
-    default_beneficiary = quote_default_beneficiary(args)
+    constructor =
+      contract_json_path
+      |> File.read!()
+      |> Poison.decode!()
+      |> Map.get("abi")
+      |> Enum.filter(fn abi -> abi["type"] == "constructor" end)
+      |> List.first()
 
-    contents = quote_deployer(quoted_args, casts, inspectors, default_beneficiary)
+    quoted_do_run = quote_do_run(constructor)
+    contents = quote_deployer(quoted_do_run)
+    doc = get_doc(constructor)
 
     DynamicModule.gen(
       module_name,
       preamble,
       contents,
-      doc: "This is auto generated deployer, supported args: #{inspect(arg_type_list)}",
+      doc: doc,
       path: Path.join(File.cwd!(), "lib/mix/tasks")
     )
   end
 
-  # {
-  #   "inputs": [
-  #     {
-  #       "internalType": "uint8",
-  #       "name": "digits",
-  #       "type": "uint8"
-  #     }
-  #   ],
-  #   "stateMutability": "nonpayable",
-  #   "type": "constructor"
-  # }
-  def quote_deployer(quoted_args, casts, inspectors, default_beneficiary) do
+  def quote_deployer(quoted_do_run) do
     quote do
       def run(command_line_args) do
         Application.ensure_all_started(:ocap_rpc)
@@ -58,20 +41,7 @@ defmodule ChainUtil.DeployerGen do
         do_run(command_line_args, sk)
       end
 
-      def do_run([unquote_splicing(quoted_args)], sk) do
-        unquote(default_beneficiary)
-
-        unquote_splicing(casts)
-        hash = Contract.deploy(sk, unquote_splicing(quoted_args))
-
-        tx = wait_tx(hash) |> IO.inspect(label: "Deployment Transaction")
-
-        contract_address =
-          get_contract_address(tx)
-          |> IO.inspect(label: "contract address")
-
-        unquote_splicing(inspectors)
-      end
+      unquote(quoted_do_run)
 
       defp get_contract_address(tx) do
         [trace] = tx.traces
@@ -90,6 +60,79 @@ defmodule ChainUtil.DeployerGen do
 
       defp wait_tx(_hash, tx) do
         tx
+      end
+    end
+  end
+
+  # {
+  #   "inputs": [
+  #     {
+  #       "internalType": "uint8",
+  #       "name": "digits",
+  #       "type": "uint8"
+  #     }
+  #   ],
+  #   "stateMutability": "nonpayable",
+  #   "type": "constructor"
+  # }
+  defp quote_do_run(%{"inputs" => inputs}) do
+    args = inputs |> Enum.map(&Map.get(&1, "name"))
+    types = inputs |> Enum.map(&Map.get(&1, "type"))
+    arg_type_list = Enum.zip(args, types)
+    quoted_args = args |> Enum.map(&to_snake_atom/1) |> Enum.map(&Macro.var(&1, nil))
+    casts = quote_args_cast(arg_type_list)
+    inspectors = quote_args_inspect(arg_type_list)
+    default_beneficiary = quote_default_beneficiary(args)
+
+    quote_do_run(quoted_args, casts, inspectors, default_beneficiary)
+  end
+
+  defp quote_do_run(quoted_args, casts, inspectors, nil) do
+    quote do
+      def do_run([unquote_splicing(quoted_args)], sk) do
+        unquote_splicing(casts)
+        hash = Contract.deploy(sk, unquote_splicing(quoted_args))
+
+        tx = wait_tx(hash) |> IO.inspect(label: "Deployment Transaction")
+
+        contract_address =
+          get_contract_address(tx)
+          |> IO.inspect(label: "contract address")
+
+        unquote_splicing(inspectors)
+      end
+    end
+  end
+
+  defp quote_do_run(quoted_args, casts, inspectors, default_beneficiary) do
+    quote do
+      def do_run([unquote_splicing(quoted_args)], sk) do
+        unquote(default_beneficiary)
+
+        unquote_splicing(casts)
+        hash = Contract.deploy(sk, unquote_splicing(quoted_args))
+
+        tx = wait_tx(hash) |> IO.inspect(label: "Deployment Transaction")
+
+        contract_address =
+          get_contract_address(tx)
+          |> IO.inspect(label: "contract address")
+
+        unquote_splicing(inspectors)
+      end
+    end
+  end
+
+  defp quote_do_run(_) do
+    quote do
+      def do_run([], sk) do
+        hash = Contract.deploy(sk)
+
+        tx = wait_tx(hash) |> IO.inspect(label: "Deployment Transaction")
+
+        contract_address =
+          get_contract_address(tx)
+          |> IO.inspect(label: "contract address")
       end
     end
   end
@@ -150,10 +193,18 @@ defmodule ChainUtil.DeployerGen do
         end
 
       false ->
-        quote do
-        end
+        nil
     end
   end
+
+  defp get_doc(%{"inputs" => inputs}) do
+    args = inputs |> Enum.map(&Map.get(&1, "name"))
+    types = inputs |> Enum.map(&Map.get(&1, "type"))
+    arg_type_list = Enum.zip(args, types)
+    "This is auto generated deployer, supported args: #{inspect(arg_type_list)}"
+  end
+
+  defp get_doc(_), do: "This is auto generated deployer."
 
   @doc """
   Convert a string to an atom in snake case.
