@@ -52,7 +52,7 @@ contracts-asm:
     	--base-path . \
     	--include-path node_modules/ \
     	--asm \
-    	-o ./out \
+    	-o ./solc_out \
     	--optimize \
     	--optimize-runs=1000
 
@@ -61,7 +61,7 @@ contracts-bin:
     	--base-path . \
     	--include-path node_modules/ \
     	--bin \
-    	-o ./out \
+    	-o ./solc_out \
     	--optimize \
     	--optimize-runs=1000
 
