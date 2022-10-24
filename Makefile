@@ -48,7 +48,7 @@ hd-contracts:
 	@npx hardhat run --network localhost scripts/deploy.js
 
 contracts-asm:
-	@solc contracts/Stela.sol \
+	@solc contracts/${contract}.sol \
     	--base-path . \
     	--include-path node_modules/ \
     	--asm \
@@ -57,7 +57,7 @@ contracts-asm:
     	--optimize-runs=1000
 
 contracts-bin:
-	@solc contracts/Stela.sol \
+	@solc contracts/${contract}.sol \
     	--base-path . \
     	--include-path node_modules/ \
     	--bin \
