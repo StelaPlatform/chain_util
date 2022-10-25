@@ -1,4 +1,5 @@
 defmodule ChainUtil.DeployerGen do
+  use ChainUtil.AutoGen.Util
   require UtilityBelt.CodeGen.DynamicModule
   alias UtilityBelt.CodeGen.DynamicModule
 
@@ -11,16 +12,16 @@ defmodule ChainUtil.DeployerGen do
         use Mix.Task
       end
 
-    constructor =
-      contract_json_path
-      |> File.read!()
-      |> Poison.decode!()
-      |> Map.get("abi")
-      |> Enum.filter(fn abi -> abi["type"] == "constructor" end)
-      |> List.first()
+    contract_json = read_contract_json(contract_json_path)
 
-    quoted_do_run = quote_do_run(constructor)
+    link_references = get_link_references(contract_json)
+
+    constructor = get_constructor(contract_json)
+
+    quoted_do_run = quote_do_run(constructor, link_references)
+
     contents = quote_deployer(quoted_do_run)
+
     doc = get_doc(constructor)
 
     DynamicModule.gen(
@@ -75,70 +76,65 @@ defmodule ChainUtil.DeployerGen do
   #   "stateMutability": "nonpayable",
   #   "type": "constructor"
   # }
-  defp quote_do_run(%{"inputs" => inputs}) do
+  defp quote_do_run(constructor, link_references) do
+    quoted_deployment_args = quote_deployment_args(constructor, link_references)
+    quoted_casts = quote_args_cast(constructor)
+    quoted_inspectors = quote_args_inspect(constructor)
+    quoted_default_beneficiary = quote_default_beneficiary(constructor)
+
+    quote_do_run(
+      quoted_deployment_args,
+      quoted_casts,
+      quoted_inspectors,
+      quoted_default_beneficiary
+    )
+  end
+
+  defp quote_do_run(
+         quoted_deployment_args,
+         quoted_casts,
+         quoted_inspectors,
+         quoted_default_beneficiary
+       ) do
+    quote do
+      def do_run([unquote_splicing(quoted_deployment_args)], sk) do
+        unquote(quoted_default_beneficiary)
+
+        unquote_splicing(quoted_casts)
+
+        hash = Contract.deploy(sk, unquote_splicing(quoted_deployment_args))
+        tx = wait_tx(hash) |> IO.inspect(label: "Deployment Transaction")
+        contract_address = tx |> get_contract_address() |> IO.inspect(label: "contract address")
+
+        unquote_splicing(quoted_inspectors)
+      end
+    end
+  end
+
+  defp quote_deployment_args(constructor, link_references) do
+    constructor_args =
+      case constructor do
+        nil ->
+          []
+
+        %{"inputs" => inputs} ->
+          inputs |> Enum.map(&Map.get(&1, "name")) |> Enum.map(&to_snake_atom/1)
+      end
+
+    link_reference_args = Enum.map(link_references, &elem(&1, 0))
+
+    (constructor_args ++ link_reference_args) |> Enum.map(&Macro.var(&1, nil))
+  end
+
+  defp quote_args_inspect(nil), do: []
+
+  defp quote_args_inspect(%{"inputs" => inputs}) do
     args = inputs |> Enum.map(&Map.get(&1, "name"))
     types = inputs |> Enum.map(&Map.get(&1, "type"))
-    arg_type_list = Enum.zip(args, types)
-    quoted_args = args |> Enum.map(&to_snake_atom/1) |> Enum.map(&Macro.var(&1, nil))
-    casts = quote_args_cast(arg_type_list)
-    inspectors = quote_args_inspect(arg_type_list)
-    default_beneficiary = quote_default_beneficiary(args)
 
-    quote_do_run(quoted_args, casts, inspectors, default_beneficiary)
-  end
-
-  defp quote_do_run(quoted_args, casts, inspectors, nil) do
-    quote do
-      def do_run([unquote_splicing(quoted_args)], sk) do
-        unquote_splicing(casts)
-        hash = Contract.deploy(sk, unquote_splicing(quoted_args))
-
-        tx = wait_tx(hash) |> IO.inspect(label: "Deployment Transaction")
-
-        contract_address =
-          get_contract_address(tx)
-          |> IO.inspect(label: "contract address")
-
-        unquote_splicing(inspectors)
-      end
-    end
-  end
-
-  defp quote_do_run(quoted_args, casts, inspectors, default_beneficiary) do
-    quote do
-      def do_run([unquote_splicing(quoted_args)], sk) do
-        unquote(default_beneficiary)
-
-        unquote_splicing(casts)
-        hash = Contract.deploy(sk, unquote_splicing(quoted_args))
-
-        tx = wait_tx(hash) |> IO.inspect(label: "Deployment Transaction")
-
-        contract_address =
-          get_contract_address(tx)
-          |> IO.inspect(label: "contract address")
-
-        unquote_splicing(inspectors)
-      end
-    end
-  end
-
-  defp quote_do_run(_) do
-    quote do
-      def do_run([], sk) do
-        hash = Contract.deploy(sk)
-
-        tx = wait_tx(hash) |> IO.inspect(label: "Deployment Transaction")
-
-        contract_address =
-          get_contract_address(tx)
-          |> IO.inspect(label: "contract address")
-      end
-    end
-  end
-
-  def quote_args_inspect(arg_type_list) do
-    Enum.map(arg_type_list, &do_quote_args_inspect/1)
+    args
+    |> Enum.zip(types)
+    |> Enum.map(&do_quote_args_inspect/1)
   end
 
   defp do_quote_args_inspect({arg, type}) do
@@ -162,8 +158,14 @@ defmodule ChainUtil.DeployerGen do
   defp get_function_selector_type("string"), do: :string
   defp get_function_selector_type("address"), do: :address
 
-  def quote_args_cast(arg_type_list) do
-    arg_type_list
+  defp quote_args_cast(nil), do: []
+
+  defp quote_args_cast(%{"inputs" => inputs}) do
+    args = inputs |> Enum.map(&Map.get(&1, "name"))
+    types = inputs |> Enum.map(&Map.get(&1, "type"))
+
+    args
+    |> Enum.zip(types)
     |> Enum.map(fn
       {arg, "int" <> _} -> {arg, :to_integer}
       {arg, "uint" <> _} -> {arg, :to_integer}
@@ -175,15 +177,18 @@ defmodule ChainUtil.DeployerGen do
   end
 
   defp do_quote_args_cast({arg, caster}) do
-    arg_name = arg |> to_snake_atom |> Macro.var(nil)
+    arg_name = arg |> to_snake_atom() |> Macro.var(nil)
 
     quote do
       unquote(arg_name) = apply(String, unquote(caster), [unquote(arg_name)])
     end
   end
 
-  def quote_default_beneficiary(args) do
-    args
+  defp quote_default_beneficiary(nil), do: nil
+
+  defp quote_default_beneficiary(%{"inputs" => inputs}) do
+    inputs
+    |> Enum.map(&Map.get(&1, "name"))
     |> Enum.any?(fn arg -> arg == "beneficiary" end)
     |> case do
       true ->
@@ -205,19 +210,4 @@ defmodule ChainUtil.DeployerGen do
   end
 
   defp get_doc(_), do: "This is auto generated deployer."
-
-  @doc """
-  Convert a string to an atom in snake case.
-
-  ## Examples
-
-    iex> ContractGen.to_snake_atom("getApproved")
-    :get_approved
-
-    iex> ContractGen.to_snake_atom("approved")
-    :approved
-  """
-  def to_snake_atom(str) do
-    str |> Macro.underscore() |> String.to_atom()
-  end
 end

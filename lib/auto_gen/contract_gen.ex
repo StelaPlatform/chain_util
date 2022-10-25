@@ -1,65 +1,59 @@
 defmodule ChainUtil.ContractGen do
+  use ChainUtil.AutoGen.Util
   require UtilityBelt.CodeGen.DynamicModule
   alias UtilityBelt.CodeGen.DynamicModule
 
+  @output_folder "priv/gen"
+
   def gen_contract(contract_json_path, module_name) do
-    preamble =
-      quote do
-        def ensure_no_hex("0x" <> hex), do: Base.decode16!(hex, case: :mixed)
-        def ensure_no_hex(var), do: var
-      end
+    file_name = Path.basename(contract_json_path, ".json")
+    contract_json = read_contract_json(contract_json_path)
+    bytecode_file_path = copy_bytecode(file_name, contract_json["bytecode"])
 
-    contract_json =
-      contract_json_path
-      |> File.read!()
-      |> Poison.decode!()
+    quoted_preamble = quote_preamble(bytecode_file_path)
 
-    abi_list = contract_json["abi"]
-    bytecode = contract_json["bytecode"]
+    link_references = get_link_references(contract_json)
 
-    constructor =
-      abi_list
-      |> Enum.filter(fn abi -> abi["type"] == "constructor" end)
-      |> List.first()
+    constructor = get_constructor(contract_json)
 
-    functions =
-      abi_list
-      |> Enum.filter(fn abi -> abi["type"] == "function" end)
-      |> Enum.sort(fn abi1, abi2 -> abi1["stateMutability"] >= abi2["stateMutability"] end)
+    functions = get_functions(contract_json)
 
     contents = [
-      quote_constructor(constructor, bytecode)
+      quote_constructor(constructor, link_references)
       | Enum.map(functions, &quote_function_call/1)
     ]
 
     DynamicModule.gen(
       module_name,
-      preamble,
+      quoted_preamble,
       contents,
       doc: "This is an auto generated wraper module.",
-      path: Path.join(File.cwd!(), "priv/gen")
+      path: Path.join(File.cwd!(), @output_folder)
     )
   end
 
-  def quote_constructor(%{"inputs" => inputs}, bytecode) do
-    args = inputs |> Enum.map(&Map.get(&1, "name")) |> Enum.map(&to_snake_atom/1)
-    types = inputs |> Enum.map(&Map.get(&1, "type")) |> Enum.join(",")
-    func_sig = "(#{types})"
+  def quote_preamble(bytecode_file_path) do
+    quote do
+      @contract_bytecode File.read!(unquote(bytecode_file_path))
 
-    quoted_args = [:private_key | args] |> Enum.map(&Macro.var(&1, nil))
+      def ensure_no_hex("0x" <> hex), do: Base.decode16!(hex, case: :mixed)
+      def ensure_no_hex(var), do: var
+    end
+  end
+
+  def quote_constructor(constructor, link_references) do
+    quoted_deployment_args = quote_deployment_args(constructor, link_references)
+    quoted_constructor_args_list = quote_constructor_args_list(constructor)
+    quoted_constructor_sig = quote_constructor_sig(constructor)
+    quoted_link_references = quote_link_references(link_references)
 
     quote do
-      def deploy(unquote_splicing(quoted_args)) do
-        values =
-          unquote(args)
-          |> Enum.map(fn k -> Keyword.get(binding(), k) end)
-          |> Enum.map(&ensure_no_hex/1)
+      def deploy(unquote_splicing(quoted_deployment_args)) do
+        unquote(quoted_constructor_args_list)
 
-        input =
-          unquote(bytecode) <>
-            (unquote(func_sig)
-             |> ABI.encode([List.to_tuple(values)])
-             |> Base.encode16(case: :lower))
+        input = @contract_bytecode <> unquote(quoted_constructor_sig)
+
+        unquote_splicing(quoted_link_references)
 
         k = Keyword.get(binding(), :private_key)
         OcapRpc.Eth.Transaction.send_transaction(k, nil, 0, input: input, gas_limit: 6_000_000)
@@ -67,16 +61,59 @@ defmodule ChainUtil.ContractGen do
     end
   end
 
-  def quote_constructor(_, bytecode) do
-    quoted_args = [:private_key] |> Enum.map(&Macro.var(&1, nil))
+  defp quote_deployment_args(constructor, link_references) do
+    constructor_args =
+      case constructor do
+        nil ->
+          []
+
+        %{"inputs" => inputs} ->
+          inputs |> Enum.map(&Map.get(&1, "name")) |> Enum.map(&to_snake_atom/1)
+      end
+
+    link_reference_args =
+      link_references
+      |> Enum.map(&elem(&1, 0))
+
+    [:private_key | constructor_args ++ link_reference_args] |> Enum.map(&Macro.var(&1, nil))
+  end
+
+  defp quote_constructor_args_list(nil) do
+    quote do
+    end
+  end
+
+  defp quote_constructor_args_list(%{"inputs" => inputs}) do
+    args = inputs |> Enum.map(&Map.get(&1, "name")) |> Enum.map(&to_snake_atom/1)
 
     quote do
-      def deploy(unquote_splicing(quoted_args)) do
-        input = unquote(bytecode)
-        k = Keyword.get(binding(), :private_key)
-        OcapRpc.Eth.Transaction.send_transaction(k, nil, 0, input: input, gas_limit: 6_000_000)
-      end
+      values =
+        unquote(args)
+        |> Enum.map(fn k -> Keyword.get(binding(), k) end)
+        |> Enum.map(&ensure_no_hex/1)
     end
+  end
+
+  defp quote_constructor_sig(nil), do: ""
+
+  defp quote_constructor_sig(%{"inputs" => inputs}) do
+    types = inputs |> Enum.map(&Map.get(&1, "type")) |> Enum.join(",")
+    func_sig = "(#{types})"
+
+    quote do
+      unquote(func_sig)
+      |> ABI.encode([List.to_tuple(values)])
+      |> Base.encode16(case: :lower)
+    end
+  end
+
+  defp quote_link_references(link_references) do
+    link_references
+    |> Enum.map(fn {lib_name, hash} ->
+      quote do
+        input = String.replace(input, unquote(hash), unquote(Macro.var(lib_name, nil)))
+      end
+    end)
   end
 
   @doc """
@@ -177,18 +214,16 @@ defmodule ChainUtil.ContractGen do
     end
   end
 
-  @doc """
-  Convert a string to an atom in snake case.
+  defp copy_bytecode(file_name, bytecode) do
+    folder_path = Path.join(File.cwd!(), @output_folder)
 
-  ## Examples
+    if File.exists?(folder_path) == false do
+      File.mkdir_p!(folder_path)
+    end
 
-    iex> ContractGen.to_snake_atom("getApproved")
-    :get_approved
+    bytecode_file_path = Path.join(folder_path, file_name)
+    File.write!(bytecode_file_path, bytecode)
 
-    iex> ContractGen.to_snake_atom("approved")
-    :approved
-  """
-  def to_snake_atom(str) do
-    str |> Macro.underscore() |> String.to_atom()
+    bytecode_file_path
   end
 end
