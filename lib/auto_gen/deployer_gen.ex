@@ -142,7 +142,7 @@ defmodule ChainUtil.DeployerGen do
       Contract
       |> apply(unquote(to_snake_atom("get_" <> arg)), [contract_address])
       |> String.replace("0x", "")
-      |> Base.decode16!()
+      |> Base.decode16!(case: :lower)
       |> ABI.TypeDecoder.decode(%ABI.FunctionSelector{
         function: nil,
         types: [unquote(get_function_selector_type(type))]
