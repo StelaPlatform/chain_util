@@ -194,7 +194,12 @@ defmodule ChainUtil.DeployerGen do
       true ->
         quote do
           %{alice: %{addr: alice}} = ChainUtil.wallets()
-          beneficiary = Keyword.get(binding(), :beneficiary, alice)
+
+          beneficiary =
+            case Keyword.get(binding(), :beneficiary, "") do
+              "0x" <> addr -> "0x" <> addr
+              _ -> alice
+            end
         end
 
       false ->
