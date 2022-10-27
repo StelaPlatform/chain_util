@@ -3,7 +3,10 @@ defmodule ChainUtil.DeployerGen do
   require UtilityBelt.CodeGen.DynamicModule
   alias UtilityBelt.CodeGen.DynamicModule
 
-  def gen_deployer(contract_json_path, contract_name, module_name) do
+  def gen_deployer(contract_json_path, contract_name, module_name, opts \\ []) do
+    output_folder = Keyword.get(opts, :output_folder, "priv/gen")
+    create_beam = Keyword.get(opts, :create_beam, false)
+
     contract_module = String.to_atom("Elixir.#{contract_name}")
 
     preamble =
@@ -29,7 +32,8 @@ defmodule ChainUtil.DeployerGen do
       preamble,
       contents,
       doc: doc,
-      path: Path.join(File.cwd!(), "lib/mix/tasks")
+      path: Path.join(File.cwd!(), output_folder),
+      create: create_beam
     )
   end
 

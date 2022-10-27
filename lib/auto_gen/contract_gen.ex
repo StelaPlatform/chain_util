@@ -3,12 +3,17 @@ defmodule ChainUtil.ContractGen do
   require UtilityBelt.CodeGen.DynamicModule
   alias UtilityBelt.CodeGen.DynamicModule
 
-  @output_folder "priv/gen"
+  def gen_contract(
+        contract_json_path,
+        module_name,
+        opts \\ []
+      ) do
+    output_folder = Keyword.get(opts, :output_folder, "priv/gen")
+    create_beam = Keyword.get(opts, :create_beam, false)
 
-  def gen_contract(contract_json_path, module_name) do
     file_name = Path.basename(contract_json_path, ".json")
     contract_json = read_contract_json(contract_json_path)
-    bytecode_file_path = copy_bytecode(file_name, contract_json["bytecode"])
+    bytecode_file_path = copy_bytecode(output_folder, file_name, contract_json["bytecode"])
 
     quoted_preamble = quote_preamble(bytecode_file_path)
 
@@ -28,7 +33,8 @@ defmodule ChainUtil.ContractGen do
       quoted_preamble,
       contents,
       doc: "This is an auto generated wraper module.",
-      path: Path.join(File.cwd!(), @output_folder)
+      path: Path.join(File.cwd!(), output_folder),
+      create: create_beam
     )
   end
 
@@ -214,8 +220,8 @@ defmodule ChainUtil.ContractGen do
     end
   end
 
-  defp copy_bytecode(file_name, bytecode) do
-    folder_path = Path.join(File.cwd!(), @output_folder)
+  defp copy_bytecode(output_folder, file_name, bytecode) do
+    folder_path = Path.join(File.cwd!(), output_folder)
 
     if File.exists?(folder_path) == false do
       File.mkdir_p!(folder_path)
