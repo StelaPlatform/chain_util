@@ -4,7 +4,7 @@ defmodule ChainUtil.DeployerGen do
   alias UtilityBelt.CodeGen.DynamicModule
 
   def gen_deployer(contract_json_path, contract_name, module_name, opts \\ []) do
-    output_folder = Keyword.get(opts, :output_folder, "priv/gen")
+    output_folder = Keyword.get(opts, :output_folder, "lib/mix/tasks")
     create_beam = Keyword.get(opts, :create_beam, false)
 
     contract_module = String.to_atom("Elixir.#{contract_name}")
