@@ -107,6 +107,8 @@ defmodule ChainUtil.DeployerGen do
         contract_address = tx |> get_contract_address() |> IO.inspect(label: "contract address")
 
         unquote_splicing(quoted_inspectors)
+
+        contract_address
       end
     end
   end
