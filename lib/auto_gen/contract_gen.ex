@@ -32,7 +32,7 @@ defmodule ChainUtil.ContractGen do
       module_name,
       quoted_preamble,
       contents,
-      doc: "This is an auto generated wraper module.",
+      doc: "This is an auto generated wrapper module.",
       path: Path.join(File.cwd!(), output_folder),
       create: create_beam
     )
@@ -165,7 +165,8 @@ defmodule ChainUtil.ContractGen do
   #   message = %{to: c, data: input}
   #   OcapRpc.Eth.Chain.call(message)
   # end
-  defp quote_function_call("view", func_name, args, func_sig) do
+  defp quote_function_call(state_mutability, func_name, args, func_sig)
+       when state_mutability in ["view", "pure"] do
     quoted_args = [:contract | args] |> Enum.map(&Macro.var(&1, nil))
 
     quote do
