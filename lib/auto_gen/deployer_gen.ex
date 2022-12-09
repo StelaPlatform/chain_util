@@ -49,8 +49,8 @@ defmodule ChainUtil.DeployerGen do
       unquote(quoted_do_run)
 
       defp get_contract_address(tx) do
-        [trace] = tx.traces
-        trace.result_address
+        [log | _] = tx.logs
+        log.address
       end
 
       defp wait_tx(hash) do
