@@ -50,4 +50,22 @@ defmodule ChainUtil do
       }
     }
   end
+
+  def hex_to_binary("0x" <> hex), do: hex_to_binary(hex)
+
+  def hex_to_binary(hex) do
+    case String.printable?(hex) do
+      true -> Base.decode16!(hex, case: :mixed)
+      false -> hex
+    end
+  end
+
+  def binary_to_hex("0x" <> bin), do: "0x" <> bin
+
+  def binary_to_hex(bin) do
+    case String.printable?(bin) do
+      true -> "0x" <> bin
+      false -> "0x" <> Base.encode16(bin, case: :lower)
+    end
+  end
 end

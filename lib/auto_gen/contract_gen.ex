@@ -54,7 +54,7 @@ defmodule ChainUtil.ContractGen do
     quoted_link_references = quote_link_references(link_references)
 
     quote do
-      def deploy(unquote_splicing(quoted_deployment_args)) do
+      def deploy(unquote_splicing(quoted_deployment_args), opts \\ []) do
         unquote(quoted_constructor_args_list)
 
         input = @contract_bytecode <> unquote(quoted_constructor_sig)
@@ -62,7 +62,8 @@ defmodule ChainUtil.ContractGen do
         unquote_splicing(quoted_link_references)
 
         k = Keyword.get(binding(), :private_key)
-        OcapRpc.Eth.Transaction.send_transaction(k, nil, 0, input: input, gas_limit: 6_000_000)
+        opts = [{:input, input} | opts]
+        OcapRpc.Eth.Transaction.send_transaction(k, nil, 0, opts)
       end
     end
   end
@@ -188,7 +189,7 @@ defmodule ChainUtil.ContractGen do
     quoted_args = [:contract, :private_key | args] |> Enum.map(&Macro.var(&1, nil))
 
     quote do
-      def unquote(func_name)(unquote_splicing(quoted_args)) do
+      def unquote(func_name)(unquote_splicing(quoted_args), opts \\ []) do
         values =
           unquote(args)
           |> Enum.map(fn k -> Keyword.get(binding(), k) end)
@@ -197,7 +198,8 @@ defmodule ChainUtil.ContractGen do
         input = unquote(func_sig) |> ABI.encode(values) |> Base.encode16(case: :lower)
         c = Keyword.get(binding(), :contract)
         k = Keyword.get(binding(), :private_key)
-        OcapRpc.Eth.Transaction.send_transaction(k, c, 0, input: input)
+        opts = [{:input, input} | opts]
+        OcapRpc.Eth.Transaction.send_transaction(k, c, 0, opts)
       end
     end
   end
@@ -206,7 +208,7 @@ defmodule ChainUtil.ContractGen do
     quoted_args = [:contract, :private_key, :wei | args] |> Enum.map(&Macro.var(&1, nil))
 
     quote do
-      def unquote(func_name)(unquote_splicing(quoted_args)) do
+      def unquote(func_name)(unquote_splicing(quoted_args), opts \\ []) do
         values =
           unquote(args)
           |> Enum.map(fn k -> Keyword.get(binding(), k) end)
@@ -216,7 +218,8 @@ defmodule ChainUtil.ContractGen do
         c = Keyword.get(binding(), :contract)
         k = Keyword.get(binding(), :private_key)
         w = Keyword.get(binding(), :wei)
-        OcapRpc.Eth.Transaction.send_transaction(k, c, w, input: input)
+        opts = [{:input, input} | opts]
+        OcapRpc.Eth.Transaction.send_transaction(k, c, w, opts)
       end
     end
   end
