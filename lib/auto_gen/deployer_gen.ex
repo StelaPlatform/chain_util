@@ -39,11 +39,11 @@ defmodule ChainUtil.DeployerGen do
 
   def quote_deployer(quoted_do_run) do
     quote do
-      def run(command_line_args) do
+      def run([gas_limit | rest_args]) do
         Application.ensure_all_started(:ocap_rpc)
         %{deployer: %{sk: sk}} = ChainUtil.wallets()
 
-        do_run(command_line_args, sk)
+        do_run(rest_args, sk, gas_limit)
       end
 
       unquote(quoted_do_run)
@@ -101,12 +101,20 @@ defmodule ChainUtil.DeployerGen do
          quoted_default_beneficiary
        ) do
     quote do
-      def do_run([unquote_splicing(quoted_deployment_args)], sk) do
+      def do_run([unquote_splicing(quoted_deployment_args)], sk, gas_limit) do
         unquote(quoted_default_beneficiary)
 
         unquote_splicing(quoted_casts)
 
-        hash = Contract.deploy(sk, unquote_splicing(quoted_deployment_args))
+        opts = [gas_limit: gas_limit]
+
+        hash =
+          Contract.deploy(
+            sk,
+            unquote_splicing(quoted_deployment_args),
+            opts
+          )
+
         tx = wait_tx(hash) |> IO.inspect(label: "Deployment Transaction")
         contract_address = tx |> get_contract_address() |> IO.inspect(label: "contract address")
 
