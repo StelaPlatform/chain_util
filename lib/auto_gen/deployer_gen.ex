@@ -106,7 +106,7 @@ defmodule ChainUtil.DeployerGen do
 
         unquote_splicing(quoted_casts)
 
-        opts = [gas_limit: gas_limit]
+        opts = [gas_limit: String.to_integer(gas_limit)]
 
         hash =
           Contract.deploy(
