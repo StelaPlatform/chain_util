@@ -25,6 +25,7 @@ defmodule ChainUtil.MixProject do
       # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
       {:utility_belt, "~> 0.16.0"},
       {:keccakf1600, "~> 2.1", hex: :keccakf1600_diode_fork},
+      {:fast_eip_55, "~> 0.3"},
       {:poison, "~> 5.0.0"}
     ]
   end

@@ -114,8 +114,9 @@ defmodule ChainUtil.DeployerGen do
             unquote_splicing(quoted_deployment_args),
             opts
           )
+          |> IO.inspect(label: "Contract Deployment Transaction")
 
-        tx = wait_tx(hash) |> IO.inspect(label: "Deployment Transaction")
+        tx = wait_tx(hash)
         contract_address = tx |> get_contract_address() |> IO.inspect(label: "contract address")
 
         unquote_splicing(quoted_inspectors)
@@ -155,12 +156,12 @@ defmodule ChainUtil.DeployerGen do
     quote do
       Contract
       |> apply(unquote(to_snake_atom("get_" <> arg)), [contract_address])
-      |> String.replace("0x", "")
-      |> Base.decode16!(case: :lower)
-      |> ABI.TypeDecoder.decode(%ABI.FunctionSelector{
-        function: nil,
-        types: [unquote(get_function_selector_type(type))]
-      })
+      # |> String.replace("0x", "")
+      # |> Base.decode16!(case: :lower)
+      # |> ABI.TypeDecoder.decode(%ABI.FunctionSelector{
+      #   function: nil,
+      #   types: [unquote(get_function_selector_type(type))]
+      # })
       |> IO.inspect(label: unquote(arg))
     end
   end

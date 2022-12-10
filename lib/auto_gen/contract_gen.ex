@@ -44,6 +44,20 @@ defmodule ChainUtil.ContractGen do
 
       def ensure_no_hex("0x" <> hex), do: Base.decode16!(hex, case: :mixed)
       def ensure_no_hex(var), do: var
+
+      def decode_output(hex, "(address)") do
+        "0x000000000000000000000000" <> addr = hex
+        {:ok, addr} = FastEIP55.encode("0x" <> addr)
+        addr
+      end
+
+      def decode_output(hex, "(bytes32)"), do: hex
+
+      def decode_output(hex, outputs) do
+        bin = ChainUtil.hex_to_binary(hex)
+        [{value}] = ABI.decode(outputs, bin)
+        value
+      end
     end
   end
 
@@ -155,8 +169,10 @@ defmodule ChainUtil.ContractGen do
     args = abi["inputs"] |> Enum.map(&Map.get(&1, "name")) |> Enum.map(&to_snake_atom/1)
     types = abi["inputs"] |> Enum.map(&Map.get(&1, "type")) |> Enum.join(",")
     func_sig = "#{abi["name"]}(#{types})"
+    outputs = abi["outputs"] |> Enum.map(&Map.get(&1, "type")) |> Enum.join(",")
+    outputs = "(#{outputs})"
 
-    quote_function_call(abi["stateMutability"], func_name, args, func_sig)
+    quote_function_call(abi["stateMutability"], func_name, args, func_sig, outputs)
   end
 
   # def is_approved_for_all(contract, owner, operator) do
@@ -166,7 +182,7 @@ defmodule ChainUtil.ContractGen do
   #   message = %{to: c, data: input}
   #   OcapRpc.Eth.Chain.call(message)
   # end
-  defp quote_function_call(state_mutability, func_name, args, func_sig)
+  defp quote_function_call(state_mutability, func_name, args, func_sig, outputs)
        when state_mutability in ["view", "pure"] do
     quoted_args = [:contract | args] |> Enum.map(&Macro.var(&1, nil))
 
@@ -180,12 +196,15 @@ defmodule ChainUtil.ContractGen do
         input = unquote(func_sig) |> ABI.encode(values) |> Base.encode16(case: :lower)
         c = Keyword.get(binding(), :contract)
         message = %{to: c, data: input}
-        OcapRpc.Eth.Chain.call(message, :latest)
+
+        message
+        |> OcapRpc.Eth.Chain.call(:latest)
+        |> decode_output(unquote(outputs))
       end
     end
   end
 
-  defp quote_function_call("nonpayable", func_name, args, func_sig) do
+  defp quote_function_call("nonpayable", func_name, args, func_sig, _outputs) do
     quoted_args = [:contract, :private_key | args] |> Enum.map(&Macro.var(&1, nil))
 
     quote do
@@ -204,7 +223,7 @@ defmodule ChainUtil.ContractGen do
     end
   end
 
-  defp quote_function_call("payable", func_name, args, func_sig) do
+  defp quote_function_call("payable", func_name, args, func_sig, _outputs) do
     quoted_args = [:contract, :private_key, :wei | args] |> Enum.map(&Macro.var(&1, nil))
 
     quote do
