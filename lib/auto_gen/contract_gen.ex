@@ -243,7 +243,7 @@ defmodule ChainUtil.ContractGen do
         values =
           unquote(args)
           |> Stream.map(fn k -> Keyword.get(binding(), k) end)
-          |> Enum.map(&ensure_no_hex/1)
+          |> Enum.map(&(ChainUtil.hex_to_binary() / 1 / 1))
 
         input = unquote(func_sig) |> ABI.encode(values) |> Base.encode16(case: :lower)
         c = Keyword.get(binding(), :contract)
