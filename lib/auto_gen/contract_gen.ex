@@ -23,10 +23,12 @@ defmodule ChainUtil.ContractGen do
 
     functions = get_functions(contract_json)
 
-    contents = [
-      quote_constructor(constructor, link_references)
-      | Enum.map(functions, &quote_function_call/1)
-    ]
+    events = get_events(contract_json)
+
+    contents =
+      [quote_constructor(constructor, link_references)] ++
+        Enum.map(functions, &quote_function_call/1) ++
+        Enum.map(events, &quote_event_call/1)
 
     DynamicModule.gen(
       module_name,
@@ -42,9 +44,6 @@ defmodule ChainUtil.ContractGen do
     quote do
       @contract_bytecode File.read!(unquote(bytecode_file_path))
 
-      def ensure_no_hex("0x" <> hex), do: Base.decode16!(hex, case: :mixed)
-      def ensure_no_hex(var), do: var
-
       def decode_output(hex, "(address)") do
         "0x000000000000000000000000" <> addr = hex
         {:ok, addr} = FastEIP55.encode("0x" <> addr)
@@ -57,6 +56,19 @@ defmodule ChainUtil.ContractGen do
         bin = ChainUtil.hex_to_binary(hex)
         [{value}] = ABI.decode(outputs, bin)
         value
+      end
+
+      def encode_to_topic("uint256", value) do
+        "(uint256)"
+        |> ABI.encode([{value}])
+        |> ChainUtil.binary_to_hex()
+      end
+
+      def encode_to_topic("bytes32", value), do: ChainUtil.binary_to_hex(value)
+
+      def encode_to_topic("address", value) do
+        addr = ChainUtil.binary_to_hex(value)
+        "0x" <> String.pad_leading(addr, 64, "0")
       end
     end
   end
@@ -89,7 +101,7 @@ defmodule ChainUtil.ContractGen do
           []
 
         %{"inputs" => inputs} ->
-          inputs |> Enum.map(&Map.get(&1, "name")) |> Enum.map(&to_snake_atom/1)
+          inputs |> Stream.map(&Map.get(&1, "name")) |> Enum.map(&to_snake_atom/1)
       end
 
     link_reference_args =
@@ -105,13 +117,13 @@ defmodule ChainUtil.ContractGen do
   end
 
   defp quote_constructor_args_list(%{"inputs" => inputs}) do
-    args = inputs |> Enum.map(&Map.get(&1, "name")) |> Enum.map(&to_snake_atom/1)
+    args = inputs |> Stream.map(&Map.get(&1, "name")) |> Enum.map(&to_snake_atom/1)
 
     quote do
       values =
         unquote(args)
-        |> Enum.map(fn k -> Keyword.get(binding(), k) end)
-        |> Enum.map(&ensure_no_hex/1)
+        |> Stream.map(fn k -> Keyword.get(binding(), k) end)
+        |> Enum.map(&ChainUtil.hex_to_binary/1)
     end
   end
 
@@ -166,10 +178,10 @@ defmodule ChainUtil.ContractGen do
   """
   def quote_function_call(abi) do
     func_name = to_snake_atom(abi["name"])
-    args = abi["inputs"] |> Enum.map(&Map.get(&1, "name")) |> Enum.map(&to_snake_atom/1)
-    types = abi["inputs"] |> Enum.map(&Map.get(&1, "type")) |> Enum.join(",")
+    args = abi["inputs"] |> Stream.map(&Map.get(&1, "name")) |> Enum.map(&to_snake_atom/1)
+    types = abi["inputs"] |> Stream.map(&Map.get(&1, "type")) |> Enum.join(",")
     func_sig = "#{abi["name"]}(#{types})"
-    outputs = abi["outputs"] |> Enum.map(&Map.get(&1, "type")) |> Enum.join(",")
+    outputs = abi["outputs"] |> Stream.map(&Map.get(&1, "type")) |> Enum.join(",")
     outputs = "(#{outputs})"
 
     quote_function_call(abi["stateMutability"], func_name, args, func_sig, outputs)
@@ -190,8 +202,8 @@ defmodule ChainUtil.ContractGen do
       def unquote(func_name)(unquote_splicing(quoted_args)) do
         values =
           unquote(args)
-          |> Enum.map(fn k -> Keyword.get(binding(), k) end)
-          |> Enum.map(&ensure_no_hex/1)
+          |> Stream.map(fn k -> Keyword.get(binding(), k) end)
+          |> Enum.map(&ChainUtil.hex_to_binary/1)
 
         input = unquote(func_sig) |> ABI.encode(values) |> Base.encode16(case: :lower)
         c = Keyword.get(binding(), :contract)
@@ -211,8 +223,8 @@ defmodule ChainUtil.ContractGen do
       def unquote(func_name)(unquote_splicing(quoted_args), opts \\ []) do
         values =
           unquote(args)
-          |> Enum.map(fn k -> Keyword.get(binding(), k) end)
-          |> Enum.map(&ensure_no_hex/1)
+          |> Stream.map(fn k -> Keyword.get(binding(), k) end)
+          |> Enum.map(&ChainUtil.hex_to_binary/1)
 
         input = unquote(func_sig) |> ABI.encode(values) |> Base.encode16(case: :lower)
         c = Keyword.get(binding(), :contract)
@@ -230,7 +242,7 @@ defmodule ChainUtil.ContractGen do
       def unquote(func_name)(unquote_splicing(quoted_args), opts \\ []) do
         values =
           unquote(args)
-          |> Enum.map(fn k -> Keyword.get(binding(), k) end)
+          |> Stream.map(fn k -> Keyword.get(binding(), k) end)
           |> Enum.map(&ensure_no_hex/1)
 
         input = unquote(func_sig) |> ABI.encode(values) |> Base.encode16(case: :lower)
@@ -239,6 +251,70 @@ defmodule ChainUtil.ContractGen do
         w = Keyword.get(binding(), :wei)
         opts = [{:input, input} | opts]
         OcapRpc.Eth.Transaction.send_transaction(k, c, w, opts)
+      end
+    end
+  end
+
+  # {
+  #   "anonymous": false,
+  #   "inputs": [
+  #     {
+  #       "indexed": true,
+  #       "internalType": "uint256",
+  #       "name": "commentIndex",
+  #       "type": "uint256"
+  #     },
+  #     {
+  #       "indexed": true,
+  #       "internalType": "bytes32",
+  #       "name": "commentCID",
+  #       "type": "bytes32"
+  #     }
+  #   ],
+  #   "name": "NewComment",
+  #   "type": "event"
+  # }
+  defp quote_event_call(abi) do
+    func_name = to_snake_atom("log_" <> abi["name"])
+
+    indexed_args = Enum.filter(abi["inputs"], &Map.get(&1, "indexed"))
+
+    indexed_arg_names =
+      indexed_args
+      |> Stream.map(&Map.get(&1, "name"))
+      |> Enum.map(&to_snake_atom/1)
+
+    indexed_arg_types = Enum.map(indexed_args, &Map.get(&1, "type"))
+
+    all_types = abi["inputs"] |> Stream.map(&Map.get(&1, "type")) |> Enum.join(",")
+    func_sig = "#{abi["name"]}(#{all_types})"
+    topic_0 = func_sig |> :keccakf1600.sha3_256() |> ChainUtil.binary_to_hex()
+
+    # outputs = abi["outputs"] |> Enum.map(&Map.get(&1, "type")) |> Enum.join(",")
+    # outputs = "(#{outputs})"
+
+    quoted_args = [:contract | indexed_arg_names] |> Enum.map(&Macro.var(&1, nil))
+
+    quote do
+      def unquote(func_name)(unquote_splicing(quoted_args), opts \\ []) do
+        other_topics =
+          unquote(indexed_arg_names)
+          |> Stream.zip(unquote(indexed_arg_types))
+          |> Stream.map(fn {name, type} -> {type, Keyword.get(binding(), name)} end)
+          |> Stream.reject(fn {_type, value} -> is_nil(value) end)
+          |> Stream.map(fn {type, value} -> encode_to_topic(type, value) end)
+          |> Enum.to_list()
+
+        topics = [unquote(topic_0) | other_topics]
+
+        filter_obj = %{
+          fromBlock: Keyword.get(opts, :from_block, :latest),
+          toBlock: Keyword.get(opts, :to_block, :latest),
+          address: contract,
+          topics: topics
+        }
+
+        OcapRpc.Eth.Log.get_logs(filter_obj)
       end
     end
   end

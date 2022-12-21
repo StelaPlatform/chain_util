@@ -34,6 +34,11 @@ defmodule ChainUtil.AutoGen.Util do
         |> Enum.sort(fn abi1, abi2 -> abi1["stateMutability"] >= abi2["stateMutability"] end)
       end
 
+      def get_events(%{"abi" => abi_list}) do
+        abi_list
+        |> Enum.filter(fn abi -> abi["type"] == "event" end)
+      end
+
       @doc """
       Returns a tuple list:
       [

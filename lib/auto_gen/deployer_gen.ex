@@ -152,7 +152,7 @@ defmodule ChainUtil.DeployerGen do
     |> Enum.map(&do_quote_args_inspect/1)
   end
 
-  defp do_quote_args_inspect({arg, type}) do
+  defp do_quote_args_inspect({arg, _type}) do
     quote do
       Contract
       |> apply(unquote(to_snake_atom("get_" <> arg)), [contract_address])
@@ -166,12 +166,12 @@ defmodule ChainUtil.DeployerGen do
     end
   end
 
-  defp get_function_selector_type("uint8"), do: {:uint, 8}
-  defp get_function_selector_type("uint256"), do: {:uint, 256}
-  defp get_function_selector_type("bool"), do: :bool
-  defp get_function_selector_type("bytes"), do: :bytes
-  defp get_function_selector_type("string"), do: :string
-  defp get_function_selector_type("address"), do: :address
+  # defp get_function_selector_type("uint8"), do: {:uint, 8}
+  # defp get_function_selector_type("uint256"), do: {:uint, 256}
+  # defp get_function_selector_type("bool"), do: :bool
+  # defp get_function_selector_type("bytes"), do: :bytes
+  # defp get_function_selector_type("string"), do: :string
+  # defp get_function_selector_type("address"), do: :address
 
   defp quote_args_cast(nil), do: []
 
