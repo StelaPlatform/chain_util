@@ -275,7 +275,7 @@ defmodule ChainUtil.ContractGen do
   #   "type": "event"
   # }
   defp quote_event_call(abi) do
-    func_name = to_snake_atom("log_" <> abi["name"])
+    func_name = to_snake_atom("log" <> abi["name"])
 
     indexed_args = Enum.filter(abi["inputs"], &Map.get(&1, "indexed"))
 
