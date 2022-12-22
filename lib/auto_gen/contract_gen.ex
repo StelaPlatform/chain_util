@@ -44,6 +44,9 @@ defmodule ChainUtil.ContractGen do
     quote do
       @contract_bytecode File.read!(unquote(bytecode_file_path))
 
+      def ensure_no_hex("0x" <> hex), do: Base.decode16!(hex, case: :mixed)
+      def ensure_no_hex(var), do: var
+
       def decode_output(hex, "(address)") do
         "0x000000000000000000000000" <> addr = hex
         {:ok, addr} = FastEIP55.encode("0x" <> addr)
@@ -123,7 +126,7 @@ defmodule ChainUtil.ContractGen do
       values =
         unquote(args)
         |> Stream.map(fn k -> Keyword.get(binding(), k) end)
-        |> Enum.map(&ChainUtil.hex_to_binary/1)
+        |> Enum.map(&ensure_no_hex/1)
     end
   end
 
@@ -203,7 +206,7 @@ defmodule ChainUtil.ContractGen do
         values =
           unquote(args)
           |> Stream.map(fn k -> Keyword.get(binding(), k) end)
-          |> Enum.map(&ChainUtil.hex_to_binary/1)
+          |> Enum.map(&ensure_no_hex/1)
 
         input = unquote(func_sig) |> ABI.encode(values) |> Base.encode16(case: :lower)
         c = Keyword.get(binding(), :contract)
@@ -224,7 +227,7 @@ defmodule ChainUtil.ContractGen do
         values =
           unquote(args)
           |> Stream.map(fn k -> Keyword.get(binding(), k) end)
-          |> Enum.map(&ChainUtil.hex_to_binary/1)
+          |> Enum.map(&ensure_no_hex/1)
 
         input = unquote(func_sig) |> ABI.encode(values) |> Base.encode16(case: :lower)
         c = Keyword.get(binding(), :contract)
@@ -243,7 +246,7 @@ defmodule ChainUtil.ContractGen do
         values =
           unquote(args)
           |> Stream.map(fn k -> Keyword.get(binding(), k) end)
-          |> Enum.map(&ChainUtil.hex_to_binary/1)
+          |> Enum.map(&ensure_no_hex/1)
 
         input = unquote(func_sig) |> ABI.encode(values) |> Base.encode16(case: :lower)
         c = Keyword.get(binding(), :contract)

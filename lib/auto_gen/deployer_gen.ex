@@ -12,7 +12,6 @@ defmodule ChainUtil.DeployerGen do
     preamble =
       quote do
         alias unquote(contract_module), as: Contract
-        use Mix.Task
       end
 
     contract_json = read_contract_json(contract_json_path)
@@ -48,11 +47,6 @@ defmodule ChainUtil.DeployerGen do
 
       unquote(quoted_do_run)
 
-      defp get_contract_address(tx) do
-        [log | _] = tx.logs
-        log.address
-      end
-
       defp wait_tx(hash) do
         wait_tx(hash, OcapRpc.Eth.Transaction.get_by_hash(hash))
       end
@@ -63,9 +57,8 @@ defmodule ChainUtil.DeployerGen do
         wait_tx(hash, tx)
       end
 
-      defp wait_tx(_hash, tx) do
-        tx
-      end
+      defp wait_tx(_, %{receipt_status: 0}), do: raise("Failed to deploy contract.")
+      defp wait_tx(_hash, tx), do: tx
     end
   end
 
@@ -114,10 +107,11 @@ defmodule ChainUtil.DeployerGen do
             unquote_splicing(quoted_deployment_args),
             opts
           )
-          |> IO.inspect(label: "Contract Deployment Transaction")
+
+        IO.inspect(hash, label: "Contract Deployment Transaction")
 
         tx = wait_tx(hash)
-        contract_address = tx |> get_contract_address() |> IO.inspect(label: "contract address")
+        contract_address = tx.contract_address |> IO.inspect(label: "contract address")
 
         unquote_splicing(quoted_inspectors)
 
