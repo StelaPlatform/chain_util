@@ -310,10 +310,12 @@ defmodule ChainUtil.ContractGen do
 
         topics = [unquote(topic_0) | other_topics]
 
+        c = Keyword.get(binding(), :contract)
+
         filter_obj = %{
           fromBlock: Keyword.get(opts, :from_block, :latest),
           toBlock: Keyword.get(opts, :to_block, :latest),
-          address: contract,
+          address: c,
           topics: topics
         }
 
