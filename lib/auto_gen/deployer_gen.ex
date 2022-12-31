@@ -110,8 +110,9 @@ defmodule ChainUtil.DeployerGen do
 
         IO.inspect(hash, label: "Contract Deployment Transaction")
 
-        tx = wait_tx(hash)
-        contract_address = tx.contract_address |> IO.inspect(label: "contract address")
+        _tx = wait_tx(hash)
+        receipt = OcapRpc.Eth.Transaction.get_receipt(hash)
+        contract_address = receipt.contract_address |> IO.inspect(label: "contract address")
 
         unquote_splicing(quoted_inspectors)
 
