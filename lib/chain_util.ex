@@ -108,16 +108,35 @@ defmodule ChainUtil do
     }
   end
 
-  def hex_to_binary("0x" <> hex), do: hex_to_binary(hex)
+  @doc """
+  Cast hex string that starts with "0x" to binary and leave other types of input untouched.
 
-  def hex_to_binary(hex) do
-    case String.printable?(hex) do
-      true -> Base.decode16!(hex, case: :mixed)
-      false -> hex
-    end
-  end
+  ## Examples
 
-  def binary_to_hex("0x" <> bin), do: "0x" <> bin
+      iex> ChainUtil.hex_to_binary("0x01")
+      <<1>>
+
+      iex> ChainUtil.hex_to_binary("01")
+      "01"
+
+  """
+  def hex_to_binary("0x"), do: <<>>
+  def hex_to_binary("0x" <> hex), do: Base.decode16!(hex, case: :mixed)
+  def hex_to_binary(others), do: others
+
+  @doc """
+  Cast binary to hex string starting with "0x"
+
+  ## Examples
+
+      iex> ChainUtil.binary_to_hex(<<1>>)
+      "0x01"
+
+      iex> ChainUtil.binary_to_hex("0x01")
+      "0x01"
+
+  """
+  def binary_to_hex("0x" <> hex), do: "0x" <> hex
 
   def binary_to_hex(bin) do
     case String.printable?(bin) do
@@ -125,4 +144,10 @@ defmodule ChainUtil do
       false -> "0x" <> Base.encode16(bin, case: :lower)
     end
   end
+
+  @doc """
+  Cast integer to hex string starting with "0x"
+  """
+  def integer_to_hex(int) when is_integer(int), do: "0x" <> Integer.to_string(int, 16)
+  def integer_to_hex(any), do: any
 end
