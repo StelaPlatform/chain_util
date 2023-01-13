@@ -135,14 +135,14 @@ defmodule ChainUtil do
       iex> ChainUtil.binary_to_hex("0x01")
       "0x01"
 
+      iex> ChainUtil.binary_to_hex("VZ.,")
+      "0x565a2e2c"
+
   """
   def binary_to_hex("0x" <> hex), do: "0x" <> hex
 
   def binary_to_hex(bin) do
-    case String.printable?(bin) do
-      true -> "0x" <> bin
-      false -> "0x" <> Base.encode16(bin, case: :lower)
-    end
+    "0x" <> Base.encode16(bin, case: :lower)
   end
 
   @doc """
